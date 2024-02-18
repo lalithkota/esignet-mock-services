@@ -18,7 +18,6 @@ import io.mosip.esignet.api.exception.VCIExchangeException;
 import io.mosip.esignet.api.util.ErrorConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import foundation.identity.jsonld.ConfigurableDocumentLoader;
@@ -35,7 +34,6 @@ import io.mosip.kernel.signature.dto.JWTSignatureResponseDto;
 import io.mosip.kernel.signature.service.SignatureService;
 import lombok.extern.slf4j.Slf4j;
 
-@ConditionalOnProperty(value = "mosip.esignet.integration.vci-plugin", havingValue = "MockVCIssuancePlugin")
 @Component
 @Slf4j
 public class MockVCIssuancePlugin implements VCIssuancePlugin {
@@ -50,6 +48,11 @@ public class MockVCIssuancePlugin implements VCIssuancePlugin {
 	public static final String UTC_DATETIME_PATTERN = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
 
 	public static final String OIDC_SERVICE_APP_ID = "OIDC_SERVICE";
+
+	@Override
+	public String getName(){
+		return "mock-vc";
+	}
 
 	@Override
 	public VCResult<JsonLDObject> getVerifiableCredentialWithLinkedDataProof(VCRequestDto vcRequestDto, String holderId,
