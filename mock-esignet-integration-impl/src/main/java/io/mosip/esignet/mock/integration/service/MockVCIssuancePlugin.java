@@ -18,7 +18,10 @@ import io.mosip.esignet.api.exception.VCIExchangeException;
 import io.mosip.esignet.api.util.ErrorConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import foundation.identity.jsonld.ConfigurableDocumentLoader;
 import foundation.identity.jsonld.JsonLDException;
@@ -28,6 +31,9 @@ import info.weboftrust.ldsignatures.canonicalizer.URDNA2015Canonicalizer;
 import io.mosip.esignet.api.dto.VCRequestDto;
 import io.mosip.esignet.api.dto.VCResult;
 import io.mosip.esignet.api.spi.VCIssuancePlugin;
+import io.mosip.esignet.core.dto.OIDCTransaction;
+import io.mosip.esignet.core.dto.vci.ParsedAccessToken;
+import io.mosip.esignet.core.util.IdentityProviderUtil;
 import io.mosip.kernel.core.util.CryptoUtil;
 import io.mosip.kernel.signature.dto.JWTSignatureRequestDto;
 import io.mosip.kernel.signature.dto.JWTSignatureResponseDto;
@@ -39,6 +45,15 @@ import lombok.extern.slf4j.Slf4j;
 public class MockVCIssuancePlugin implements VCIssuancePlugin {
 	@Autowired
 	private SignatureService signatureService;
+
+	@Autowired
+	private ParsedAccessToken parsedAccessToken;
+
+	@Autowired
+	private CacheManager cacheManager;
+
+	@Autowired
+	private ObjectMapper objectMapper;
 
 	private ConfigurableDocumentLoader confDocumentLoader = null;
 
@@ -59,7 +74,7 @@ public class MockVCIssuancePlugin implements VCIssuancePlugin {
 			Map<String, Object> identityDetails) throws VCIExchangeException {
 		JsonLDObject vcJsonLdObject = null;
 		try {
-			VCResult vcResult = new VCResult();
+			VCResult<JsonLDObject> vcResult = new VCResult<>();
 			vcJsonLdObject = buildDummyJsonLDWithLDProof(holderId);
 			vcResult.setCredential(vcJsonLdObject);
 			vcResult.setFormat("ldp_vc");
@@ -72,11 +87,19 @@ public class MockVCIssuancePlugin implements VCIssuancePlugin {
 
 	private JsonLDObject buildDummyJsonLDWithLDProof(String holderId)
 			throws IOException, GeneralSecurityException, JsonLDException, URISyntaxException {
-		Map<String, Object> formattedMap = new HashMap<>();
-		formattedMap.put("id", holderId);
-		formattedMap.put("name", "John Doe");
-		formattedMap.put("email", "john.doe@mail.com");
-		formattedMap.put("gender", "Male");
+		OIDCTransaction transaction = getUserInfoTransaction(parsedAccessToken.getAccessTokenHash());
+		Map<String, Object> formattedMap = null;
+		try{
+			String kycResult = new String(
+				IdentityProviderUtil.b64Decode(
+					transaction.getEncryptedKyc()
+					.split(".")[1]
+				)
+			);
+			formattedMap = (Map<String, Object>) objectMapper.readValue(kycResult, HashMap.class);
+		} catch(Exception e) {
+			log.error("Unable to get KYC exchange data from MOCK", e);
+		}
 
 		Map<String, Object> verCredJsonObject = new HashMap<>();
 		verCredJsonObject.put("@context", Arrays.asList("https://www.w3.org/2018/credentials/v1", "https://schema.org/"));
@@ -127,4 +150,7 @@ public class MockVCIssuancePlugin implements VCIssuancePlugin {
 		throw new VCIExchangeException(ErrorConstants.NOT_IMPLEMENTED);
 	}
 
+	public OIDCTransaction getUserInfoTransaction(String accessTokenHash) {
+		return cacheManager.getCache(io.mosip.esignet.core.constants.Constants.USERINFO_CACHE).get(accessTokenHash, OIDCTransaction.class);
+	}
 }
